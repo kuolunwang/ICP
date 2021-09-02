@@ -10,6 +10,7 @@
 #include <sensor_msgs/PointCloud2.h>
 #include <geometry_msgs/Pose.h>
 #include <ICP/get_object_pose.h>
+#include <ICP/object_id.h>
 
 // tf
 #include <tf/transform_listener.h>
@@ -47,6 +48,7 @@ private:
   ros::Subscriber model_subscriber;
 
   ros::ServiceServer get_object_pose_srv;
+  ros::ServiceServer object_id_srv;
 
   PointCloudXYZRGB::Ptr sub_cloud;
   /*Load pre-scanned Model and observed cloud*/
@@ -56,7 +58,8 @@ private:
   geometry_msgs::Pose final_pose;
   double fit_score;
 
-  string model_path = "/home/kl/Pick-and-Place-with-RL/catkin_ws/src/ICP/model/big_plate.pcd";
+  string model_path = "/home/kl/Pick-and-Place-with-RL/catkin_ws/src/ICP/model";
+  string full_path = "";
   
   void poseBroadcaster(std::string child_frame, tf::Transform transform)
   {
@@ -298,10 +301,17 @@ private:
     return true;
   }
 
+  bool object_id_cb(ICP::object_id::Request &req, ICP::object_id::Response &res)
+  {
+    full_path = model_path + "/" + req.object + ".pcd";
+    loadModels();
+    return true;
+  }
+
   void loadModels()
   {
     printf("Load model\n");
-    pcl::io::loadPCDFile<pcl::PointXYZRGB>(model_path, *model);
+    pcl::io::loadPCDFile<pcl::PointXYZRGB>(full_path, *model);
     printf("Finish Load pointcloud of model\n");
   }
 
@@ -320,8 +330,8 @@ public:
     model_subscriber = nh.subscribe<sensor_msgs::PointCloud2>("/camera/depth_registered/points", 1, &Get_object_pose::cloud_cb, this);
 
     get_object_pose_srv = nh.advertiseService("get_object_pose", &Get_object_pose::srv_cb, this);
+    object_id_srv = nh.advertiseService("object_id_srv", &Get_object_pose::object_id_cb, this);
 
-    loadModels();
   }
 };
 

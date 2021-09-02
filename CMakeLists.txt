@@ -25,6 +25,7 @@ find_package(catkin REQUIRED COMPONENTS
 add_service_files(
   FILES
   get_object_pose.srv
+  object_id.srv
 )
 
 generate_messages(
