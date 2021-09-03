@@ -11,6 +11,7 @@
 #include <geometry_msgs/Pose.h>
 #include <ICP/get_object_pose.h>
 #include <ICP/object_id.h>
+#include <ICP/pose_con.h>
 
 // tf
 #include <tf/transform_listener.h>
@@ -49,6 +50,8 @@ private:
 
   ros::ServiceServer get_object_pose_srv;
   ros::ServiceServer object_id_srv;
+  ros::ServiceServer get_object_pose_con_srv;
+  ros::Timer timer;
 
   PointCloudXYZRGB::Ptr sub_cloud;
   /*Load pre-scanned Model and observed cloud*/
@@ -56,6 +59,8 @@ private:
   PointCloudXYZRGBNormal::Ptr registered_cloud_normal;
   PointCloudXYZRGB::Ptr registered_cloud;
   geometry_msgs::Pose final_pose;
+
+  bool trigger;
   double fit_score;
 
   string model_path = "/home/kl/Pick-and-Place-with-RL/catkin_ws/src/ICP/model";
@@ -308,11 +313,72 @@ private:
     return true;
   }
 
+  bool object_pose_con(ICP::pose_con::Request &req, ICP::pose_con::Response &res)
+  {
+    if(req.con == true)
+    {
+      trigger = true;
+      res.result = "open get object pose";
+    }
+    else
+    {
+      trigger = false;
+      res.result = "close get object pose";
+    }
+
+    return true;
+  }
+
   void loadModels()
   {
     printf("Load model\n");
     pcl::io::loadPCDFile<pcl::PointXYZRGB>(full_path, *model);
     printf("Finish Load pointcloud of model\n");
+  }
+
+  void get_pose_con(const ros::TimerEvent&)
+  {
+    if(trigger == true)
+    {
+      model->header.frame_id = "camera_color_optical_frame";
+      sub_cloud->header.frame_id = "camera_color_optical_frame";
+      fit_score = 1.0;
+
+      Eigen::Matrix4f tf1, tf2, final_tf;
+
+      tf2(1,0) = 1;
+      tf2(0,1) = -1;
+
+      printf("ICP\n");
+      // while (fit_score > 0.005 /*|| tf2(1,0) > 0 || tf2(0,1) < 0*/)
+      // {
+      tf2 = point_2_point_icp(model, sub_cloud, registered_cloud);
+      //   ros::spinOnce();
+      // }
+
+      final_tf = tf2;
+
+      cout << final_tf << endl;
+
+      tf::Transform right_arm_pose, right_arm_camera_pose, final_tf_transform = eigen2tf_full(final_tf);
+
+      right_arm_camera_pose = getTransform("right_arm/base_link", "camera_color_optical_frame", true);
+      right_arm_pose = right_arm_camera_pose * final_tf_transform;
+
+      // res.object_pose.header.frame_id = "right_arm/base_link";
+      // res.object_pose.header.stamp = ros::Time::now();
+
+      // res.object_pose.pose = tf2Pose(right_arm_pose);
+      // final_pose = res.object_pose.pose;
+      final_pose = tf2Pose(right_arm_pose);
+
+      model_publisher.publish(model);
+      cloud_publisher.publish(sub_cloud);
+      registered_cloud_publisher.publish(registered_cloud);
+      pose_publisher.publish(final_pose);
+
+      poseBroadcaster("obj_pose", final_tf_transform);
+    }
   }
 
 public:
@@ -330,7 +396,10 @@ public:
     model_subscriber = nh.subscribe<sensor_msgs::PointCloud2>("/camera/depth_registered/points", 1, &Get_object_pose::cloud_cb, this);
 
     get_object_pose_srv = nh.advertiseService("get_object_pose", &Get_object_pose::srv_cb, this);
-    object_id_srv = nh.advertiseService("object_id_srv", &Get_object_pose::object_id_cb, this);
+    object_id_srv = nh.advertiseService("object_id", &Get_object_pose::object_id_cb, this);
+    get_object_pose_con_srv = nh.advertiseService("get_pose_con", &Get_object_pose::object_pose_con, this);
+
+    timer = nh.createTimer(ros::Duration(0.5), &Get_object_pose::get_pose_con, this);
 
   }
 };

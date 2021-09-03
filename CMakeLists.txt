@@ -26,6 +26,7 @@ add_service_files(
   FILES
   get_object_pose.srv
   object_id.srv
+  pose_con.srv
 )
 
 generate_messages(
