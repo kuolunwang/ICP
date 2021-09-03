@@ -15,9 +15,11 @@
 #include <message_filters/subscriber.h>
 #include <message_filters/synchronizer.h>
 #include <message_filters/sync_policies/exact_time.h>
+#include <message_filters/sync_policies/approximate_time.h>
 #include <sensor_msgs/Image.h>
 #include <cv_bridge/cv_bridge.h>
 #include <opencv2/opencv.hpp>
+#include <ros/package.h>
 
 // tf
 #include <tf/transform_listener.h>
@@ -49,11 +51,11 @@ using namespace cv;
 class Get_object_pose
 {
 private:
+  ros::NodeHandle nh;
   ros::Publisher model_publisher;
   ros::Publisher cloud_publisher;
   ros::Publisher registered_cloud_publisher;
   ros::Publisher pose_publisher;
-  ros::Subscriber model_subscriber;
 
   ros::ServiceServer get_object_pose_srv;
   ros::ServiceServer object_id_srv;
@@ -67,10 +69,19 @@ private:
   PointCloudXYZRGB::Ptr registered_cloud;
   geometry_msgs::Pose final_pose;
 
-  bool trigger;
+  // Mask rcnn mask
+  message_filters::Subscriber<sensor_msgs::PointCloud2> pcl_sub;
+  message_filters::Subscriber<sensor_msgs::Image> mask_sub;
+  typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::PointCloud2, sensor_msgs::Image> MySyncPolicy;
+  typedef message_filters::Synchronizer<MySyncPolicy> sync;
+  boost::shared_ptr<sync> Sync;
+
+  bool trigger=false;
   double fit_score;
 
-  string model_path = "/home/kl/Pick-and-Place-with-RL/catkin_ws/src/ICP/model";
+  string path = ros::package::getPath("ICP");
+
+  string model_path = path + "/model";
   string full_path = "";
   
   void poseBroadcaster(std::string child_frame, tf::Transform transform)
@@ -260,46 +271,51 @@ private:
 
   void cloud_cb(const sensor_msgs::PointCloud2ConstPtr &input, const sensor_msgs::ImageConstPtr &img)
   {
-    PointCloudXYZRGB::Ptr cloud(new PointCloudXYZRGB);
-    sensor_msgs::PointCloud2Ptr tmp;
-    memcpy(&tmp, &input, sizeof(input));
-    cv_bridge::CvImagePtr color_img_ptr;
-    Mat mask_img;
-
-    color_img_ptr = cv_bridge::toCvCopy(img);
-
-    color_img_ptr->image.copyTo(mask_img);
-
-    // get width and height of 2D point cloud data
-    int width = 640;
-    int height = 480;
-    const float Nan_value = 0.0/0.0;
-
-    for(int i=0; i < width; i++)
+    if(trigger == true)
     {
-      for(int j=0; j < height; j++)
+      PointCloudXYZRGB::Ptr cloud(new PointCloudXYZRGB);
+      sensor_msgs::PointCloud2Ptr tmp;
+      memcpy(&tmp, &input, sizeof(input));
+      cv_bridge::CvImagePtr color_img_ptr;
+      Mat mask_img;
+
+      color_img_ptr = cv_bridge::toCvCopy(img);
+
+      color_img_ptr->image.copyTo(mask_img);
+
+      // get width and height of 2D point cloud data
+      int width = 640;
+      int height = 480;
+      const float Nan_value = 0.0/0.0;
+
+      for(int i=0; i < width; i++)
       {
-        // Convert from u (column / width), v (row/height) to position in array
-        // where X,Y,Z data starts
-        int arrayPosition = j * 20480 + i * 32; // v*Cloud.row_step + u*Cloud.point_step
-
-        // compute position in array where x,y,z data start
-        int arrayPosX = arrayPosition + 0; // X has an offset of 0
-        int arrayPosY = arrayPosition + 4; // Y has an offset of 4
-        int arrayPosZ = arrayPosition + 8; // Z has an offset of 8
-
-        if(mask_img.at<uchar>(i,j,0) == 0)
+        for(int j=0; j < height; j++)
         {
-          memcpy(&tmp->data[arrayPosX], &Nan_value, sizeof(float));
-          memcpy(&tmp->data[arrayPosY], &Nan_value, sizeof(float));
-          memcpy(&tmp->data[arrayPosZ], &Nan_value, sizeof(float));
+          // Convert from u (column / width), v (row/height) to position in array
+          // where X,Y,Z data starts
+          int arrayPosition = j * 20480 + i * 32; // v*Cloud.row_step + u*Cloud.point_step
+
+          // compute position in array where x,y,z data start
+          int arrayPosX = arrayPosition + 0; // X has an offset of 0
+          int arrayPosY = arrayPosition + 4; // Y has an offset of 4
+          int arrayPosZ = arrayPosition + 8; // Z has an offset of 8
+
+          if(mask_img.at<uchar>(i,j,0) == 0)
+          {
+            memcpy(&tmp->data[arrayPosX], &Nan_value, sizeof(float));
+            memcpy(&tmp->data[arrayPosY], &Nan_value, sizeof(float));
+            memcpy(&tmp->data[arrayPosZ], &Nan_value, sizeof(float));
+          }
         }
       }
-    }
 
-    pcl::fromROSMsg(*tmp, *cloud); //convert from PointCloud2 to pcl point type
-    point_preprocess(cloud);
-    *sub_cloud = *cloud;
+      pcl::fromROSMsg(*tmp, *cloud); //convert from PointCloud2 to pcl point type
+      point_preprocess(cloud);
+      *sub_cloud = *cloud;
+
+      get_pose_con();
+    }
   }
 
   /*
@@ -378,10 +394,8 @@ private:
     printf("Finish Load pointcloud of model\n");
   }
 
-  void get_pose_con(const ros::TimerEvent&)
+  void get_pose_con()
   {
-    if(trigger == true)
-    {
       model->header.frame_id = "camera_color_optical_frame";
       sub_cloud->header.frame_id = "camera_color_optical_frame";
       fit_score = 1.0;
@@ -400,7 +414,7 @@ private:
 
       tf::Transform right_arm_pose, right_arm_camera_pose, final_tf_transform = eigen2tf_full(final_tf);
 
-      right_arm_camera_pose = getTransform("right_arm/base_link", "camera_color_optical_frame", true);
+      right_arm_camera_pose = getTransform("base_link", "camera_color_optical_frame", true);
       right_arm_pose = right_arm_camera_pose * final_tf_transform;
 
       final_pose = tf2Pose(right_arm_pose);
@@ -411,11 +425,10 @@ private:
       pose_publisher.publish(final_pose);
 
       poseBroadcaster("obj_pose", final_tf_transform);
-    }
   }
 
 public:
-  Get_object_pose(ros::NodeHandle nh)
+  Get_object_pose()
   {
     sub_cloud.reset(new PointCloudXYZRGB);
     model.reset(new PointCloudXYZRGB);
@@ -428,25 +441,21 @@ public:
     pose_publisher = nh.advertise<geometry_msgs::Pose>("/object_pose", 1);
 
     // Mask rcnn mask
-    message_filters::Subscriber<sensor_msgs::PointCloud2> pcl_sub(nh, "/camera/depth_registered/points", 1);
-    message_filters::Subscriber<sensor_msgs::Image> mask_sub(nh, "/prediction_mask", 1);
-    typedef message_filters::sync_policies::ExactTime<sensor_msgs::PointCloud2, sensor_msgs::Image> MySyncPolicy;
-    message_filters::Synchronizer<MySyncPolicy> sync(MySyncPolicy(10), pcl_sub, mask_sub);
-    sync.registerCallback(boost::bind(&Get_object_pose::cloud_cb, this, _1, _2));
+    pcl_sub.subscribe(nh, "/camera/depth_registered/points", 1);
+    mask_sub.subscribe(nh, "/camera/color/image_raw", 1);
+    Sync.reset(new sync(MySyncPolicy(10), pcl_sub, mask_sub));
+    Sync->registerCallback(boost::bind(&Get_object_pose::cloud_cb, this, _1, _2));
 
     get_object_pose_srv = nh.advertiseService("get_object_pose", &Get_object_pose::srv_cb, this);
     object_id_srv = nh.advertiseService("object_id", &Get_object_pose::object_id_cb, this);
     get_object_pose_con_srv = nh.advertiseService("get_pose_con", &Get_object_pose::object_pose_con, this);
-
-    timer = nh.createTimer(ros::Duration(0.5), &Get_object_pose::get_pose_con, this);
   }
 };
 
 int main(int argc, char **argv)
 {
   ros::init(argc, argv, "Get_object_pose");
-  ros::NodeHandle nh;
-  Get_object_pose foo = Get_object_pose(nh);
+  Get_object_pose foo;
   while (ros::ok())
     ros::spin();
   return 0;
