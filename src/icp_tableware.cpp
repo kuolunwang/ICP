@@ -12,10 +12,6 @@
 #include <ICP/get_object_pose.h>
 #include <ICP/object_id.h>
 #include <ICP/pose_con.h>
-#include <message_filters/subscriber.h>
-#include <message_filters/synchronizer.h>
-#include <message_filters/sync_policies/exact_time.h>
-#include <message_filters/sync_policies/approximate_time.h>
 #include <sensor_msgs/Image.h>
 #include <cv_bridge/cv_bridge.h>
 #include <opencv2/opencv.hpp>
@@ -58,7 +54,7 @@ private:
   ros::Publisher pose_publisher;
 
   ros::ServiceServer get_object_pose_srv;
-  ros::ServiceServer object_id_srv;
+  ros::ServiceServer object_srv;
   ros::ServiceServer get_object_pose_con_srv;
   ros::Timer timer;
 
@@ -68,13 +64,6 @@ private:
   PointCloudXYZRGBNormal::Ptr registered_cloud_normal;
   PointCloudXYZRGB::Ptr registered_cloud;
   geometry_msgs::Pose final_pose;
-
-  // Mask rcnn mask
-  message_filters::Subscriber<sensor_msgs::PointCloud2> pcl_sub;
-  message_filters::Subscriber<sensor_msgs::Image> mask_sub;
-  typedef message_filters::sync_policies::ApproximateTime<sensor_msgs::PointCloud2, sensor_msgs::Image> MySyncPolicy;
-  typedef message_filters::Synchronizer<MySyncPolicy> sync;
-  boost::shared_ptr<sync> Sync;
 
   bool trigger=false;
   double fit_score;
@@ -169,20 +158,20 @@ private:
     pcl::removeNaNFromPointCloud(*cloud, *cloud, indices2);
 
     // build the condition
-    pcl::ConditionAnd<pcl::PointXYZRGB>::Ptr range_cond(new pcl::ConditionAnd<pcl::PointXYZRGB>());
-    range_cond->addComparison(pcl::FieldComparison<pcl::PointXYZRGB>::ConstPtr(new pcl::FieldComparison<pcl::PointXYZRGB>("x", pcl::ComparisonOps::GT, -0.15)));
-    range_cond->addComparison(pcl::FieldComparison<pcl::PointXYZRGB>::ConstPtr(new pcl::FieldComparison<pcl::PointXYZRGB>("x", pcl::ComparisonOps::LT, 0.26)));
-    range_cond->addComparison(pcl::FieldComparison<pcl::PointXYZRGB>::ConstPtr(new pcl::FieldComparison<pcl::PointXYZRGB>("y", pcl::ComparisonOps::GT, -0.23)));
-    range_cond->addComparison(pcl::FieldComparison<pcl::PointXYZRGB>::ConstPtr(new pcl::FieldComparison<pcl::PointXYZRGB>("y", pcl::ComparisonOps::LT, 0.21)));
-    range_cond->addComparison(pcl::FieldComparison<pcl::PointXYZRGB>::ConstPtr(new pcl::FieldComparison<pcl::PointXYZRGB>("z", pcl::ComparisonOps::GT, 0.0)));
-    range_cond->addComparison(pcl::FieldComparison<pcl::PointXYZRGB>::ConstPtr(new pcl::FieldComparison<pcl::PointXYZRGB>("z", pcl::ComparisonOps::LT, 0.785)));
-    // build the filter
-    pcl::ConditionalRemoval<pcl::PointXYZRGB> condrem;
-    condrem.setCondition(range_cond);
-    condrem.setInputCloud(cloud);
-    condrem.setKeepOrganized(true);
-    // apply filter
-    condrem.filter(*cloud);
+    // pcl::ConditionAnd<pcl::PointXYZRGB>::Ptr range_cond(new pcl::ConditionAnd<pcl::PointXYZRGB>());
+    // range_cond->addComparison(pcl::FieldComparison<pcl::PointXYZRGB>::ConstPtr(new pcl::FieldComparison<pcl::PointXYZRGB>("x", pcl::ComparisonOps::GT, -0.15)));
+    // range_cond->addComparison(pcl::FieldComparison<pcl::PointXYZRGB>::ConstPtr(new pcl::FieldComparison<pcl::PointXYZRGB>("x", pcl::ComparisonOps::LT, 0.26)));
+    // range_cond->addComparison(pcl::FieldComparison<pcl::PointXYZRGB>::ConstPtr(new pcl::FieldComparison<pcl::PointXYZRGB>("y", pcl::ComparisonOps::GT, -0.23)));
+    // range_cond->addComparison(pcl::FieldComparison<pcl::PointXYZRGB>::ConstPtr(new pcl::FieldComparison<pcl::PointXYZRGB>("y", pcl::ComparisonOps::LT, 0.21)));
+    // range_cond->addComparison(pcl::FieldComparison<pcl::PointXYZRGB>::ConstPtr(new pcl::FieldComparison<pcl::PointXYZRGB>("z", pcl::ComparisonOps::GT, 0.0)));
+    // range_cond->addComparison(pcl::FieldComparison<pcl::PointXYZRGB>::ConstPtr(new pcl::FieldComparison<pcl::PointXYZRGB>("z", pcl::ComparisonOps::LT, 0.785)));
+    // // build the filter
+    // pcl::ConditionalRemoval<pcl::PointXYZRGB> condrem;
+    // condrem.setCondition(range_cond);
+    // condrem.setInputCloud(cloud);
+    // condrem.setKeepOrganized(true);
+    // // apply filter
+    // condrem.filter(*cloud);
 
     return;
   }
@@ -269,53 +258,49 @@ private:
     return inverse_transformation;
   }
 
-  void cloud_cb(const sensor_msgs::PointCloud2ConstPtr &input, const sensor_msgs::ImageConstPtr &img)
+  // void preprocess(const sensor_msgs::PointCloud2ConstPtr &input, const sensor_msgs::ImageConstPtr &img)
+  void preprocess(const sensor_msgs::PointCloud2ConstPtr &input)
   {
-    if(trigger == true)
-    {
-      PointCloudXYZRGB::Ptr cloud(new PointCloudXYZRGB);
-      sensor_msgs::PointCloud2Ptr tmp;
-      memcpy(&tmp, &input, sizeof(input));
-      cv_bridge::CvImagePtr color_img_ptr;
-      Mat mask_img;
+    PointCloudXYZRGB::Ptr cloud(new PointCloudXYZRGB);
+    sensor_msgs::PointCloud2Ptr tmp;
+    memcpy(&tmp, &input, sizeof(input));
+    cv_bridge::CvImagePtr color_img_ptr;
+    Mat mask_img;
 
-      color_img_ptr = cv_bridge::toCvCopy(img);
+    // color_img_ptr = cv_bridge::toCvCopy(img);
 
-      color_img_ptr->image.copyTo(mask_img);
+    // color_img_ptr->image.copyTo(mask_img);
 
-      // get width and height of 2D point cloud data
-      int width = 640;
-      int height = 480;
-      const float Nan_value = 0.0/0.0;
+    // // get width and height of 2D point cloud data
+    // int width = 640;
+    // int height = 480;
+    // const float Nan_value = 0.0/0.0;
 
-      for(int i=0; i < width; i++)
-      {
-        for(int j=0; j < height; j++)
-        {
-          // Convert from u (column / width), v (row/height) to position in array
-          // where X,Y,Z data starts
-          int arrayPosition = j * 20480 + i * 32; // v*Cloud.row_step + u*Cloud.point_step
+    // for(int i=0; i < width; i++)
+    // {
+    //   for(int j=0; j < height; j++)
+    //   {
+    //     // Convert from u (column / width), v (row/height) to position in array
+    //     // where X,Y,Z data starts
+    //     int arrayPosition = j * 20480 + i * 32; // v*Cloud.row_step + u*Cloud.point_step
 
-          // compute position in array where x,y,z data start
-          int arrayPosX = arrayPosition + 0; // X has an offset of 0
-          int arrayPosY = arrayPosition + 4; // Y has an offset of 4
-          int arrayPosZ = arrayPosition + 8; // Z has an offset of 8
+    //     // compute position in array where x,y,z data start
+    //     int arrayPosX = arrayPosition + 0; // X has an offset of 0
+    //     int arrayPosY = arrayPosition + 4; // Y has an offset of 4
+    //     int arrayPosZ = arrayPosition + 8; // Z has an offset of 8
 
-          if(mask_img.at<uchar>(i,j,0) == 0)
-          {
-            memcpy(&tmp->data[arrayPosX], &Nan_value, sizeof(float));
-            memcpy(&tmp->data[arrayPosY], &Nan_value, sizeof(float));
-            memcpy(&tmp->data[arrayPosZ], &Nan_value, sizeof(float));
-          }
-        }
-      }
+    //     if(mask_img.at<uchar>(i,j,0) == 0)
+    //     {
+    //       memcpy(&tmp->data[arrayPosX], &Nan_value, sizeof(float));
+    //       memcpy(&tmp->data[arrayPosY], &Nan_value, sizeof(float));
+    //       memcpy(&tmp->data[arrayPosZ], &Nan_value, sizeof(float));
+    //     }
+    //   }
+    // }
 
-      pcl::fromROSMsg(*tmp, *cloud); //convert from PointCloud2 to pcl point type
-      point_preprocess(cloud);
-      *sub_cloud = *cloud;
-
-      get_pose_con();
-    }
+    pcl::fromROSMsg(*tmp, *cloud); //convert from PointCloud2 to pcl point type
+    point_preprocess(cloud);
+    *sub_cloud = *cloud;
   }
 
   /*
@@ -323,48 +308,52 @@ private:
    */
   bool srv_cb(ICP::get_object_pose::Request &req, ICP::get_object_pose::Response &res)
   {
-    model->header.frame_id = "camera_color_optical_frame";
-    sub_cloud->header.frame_id = "camera_color_optical_frame";
-    fit_score = 1.0;
+      model->header.frame_id = "camera_color_optical_frame";
+      sub_cloud->header.frame_id = "camera_color_optical_frame";
+      fit_score = 1.0;
 
-    Eigen::Matrix4f tf1, tf2, final_tf;
+      Eigen::Matrix4f tf1, tf2, final_tf;
 
-    tf2(1,0) = 1;
-    tf2(0,1) = -1;
+      tf2(1,0) = 1;
+      tf2(0,1) = -1;
 
-    printf("ICP\n");
-    while (fit_score > 0.005 /*|| tf2(1,0) > 0 || tf2(0,1) < 0*/)
-    {
+      const sensor_msgs::PointCloud2ConstPtr pc = ros::topic::waitForMessage<sensor_msgs::PointCloud2>("/camera/depth_registered/points", ros::Duration(1));
+      // mk = ros:;topic::waitForMessage<sensor_msgs::Image>("/prediction_mask", ros::Duration(1));
+
+      // preprocess(pc, mk)
+      preprocess(pc);
+
+      printf("ICP\n");
       tf2 = point_2_point_icp(model, sub_cloud, registered_cloud);
-      ros::spinOnce();
-    }
 
-    final_tf = tf2;
+      final_tf = tf2;
 
-    cout << final_tf << endl;
+      cout << final_tf << endl;
 
-    tf::Transform right_arm_pose, right_arm_camera_pose, final_tf_transform = eigen2tf_full(final_tf);
+      tf::Transform right_arm_pose, right_arm_camera_pose, final_tf_transform = eigen2tf_full(final_tf);
 
-    right_arm_camera_pose = getTransform("right_arm/base_link", "camera_color_optical_frame", true);
-    right_arm_pose = right_arm_camera_pose * final_tf_transform;
+      right_arm_camera_pose = getTransform("base_link", "camera_color_optical_frame", true);
+      right_arm_pose = right_arm_camera_pose * final_tf_transform;
 
-    res.object_pose.header.frame_id = "right_arm/base_link";
-    res.object_pose.header.stamp = ros::Time::now();
+      final_pose = tf2Pose(right_arm_pose);
 
-    res.object_pose.pose = tf2Pose(right_arm_pose);
-    final_pose = res.object_pose.pose;
+      res.object_pose.header.frame_id = "base_link";
+      res.object_pose.header.stamp = ros::Time::now();
 
-    model_publisher.publish(model);
-    cloud_publisher.publish(sub_cloud);
-    registered_cloud_publisher.publish(registered_cloud);
-    pose_publisher.publish(final_pose);
+      res.object_pose.pose = tf2Pose(right_arm_pose);
+      final_pose = res.object_pose.pose;
 
-    poseBroadcaster("obj_pose", final_tf_transform);
+      model_publisher.publish(model);
+      cloud_publisher.publish(sub_cloud);
+      registered_cloud_publisher.publish(registered_cloud);
+      pose_publisher.publish(final_pose);
+
+      poseBroadcaster("obj_pose", final_tf_transform);
 
     return true;
   }
 
-  bool object_id_cb(ICP::object_id::Request &req, ICP::object_id::Response &res)
+  bool object_cb(ICP::object_id::Request &req, ICP::object_id::Response &res)
   {
     full_path = model_path + "/" + req.object + ".pcd";
     loadModels();
@@ -394,8 +383,10 @@ private:
     printf("Finish Load pointcloud of model\n");
   }
 
-  void get_pose_con()
+  void get_pose(const ros::TimerEvent&)
   {
+    if(trigger == true)
+    {
       model->header.frame_id = "camera_color_optical_frame";
       sub_cloud->header.frame_id = "camera_color_optical_frame";
       fit_score = 1.0;
@@ -404,6 +395,12 @@ private:
 
       tf2(1,0) = 1;
       tf2(0,1) = -1;
+
+      const sensor_msgs::PointCloud2ConstPtr pc = ros::topic::waitForMessage<sensor_msgs::PointCloud2>("/camera/depth_registered/points", ros::Duration(1));
+      // mk = ros:;topic::waitForMessage<sensor_msgs::Image>("/prediction_mask", ros::Duration(1));
+
+      // preprocess(pc, mk)
+      preprocess(pc);
 
       printf("ICP\n");
       tf2 = point_2_point_icp(model, sub_cloud, registered_cloud);
@@ -425,6 +422,7 @@ private:
       pose_publisher.publish(final_pose);
 
       poseBroadcaster("obj_pose", final_tf_transform);
+    }
   }
 
 public:
@@ -440,15 +438,11 @@ public:
     registered_cloud_publisher = nh.advertise<sensor_msgs::PointCloud2>("/camera/registered_cloud", 1);
     pose_publisher = nh.advertise<geometry_msgs::Pose>("/object_pose", 1);
 
-    // Mask rcnn mask
-    pcl_sub.subscribe(nh, "/camera/depth_registered/points", 1);
-    mask_sub.subscribe(nh, "/camera/color/image_raw", 1);
-    Sync.reset(new sync(MySyncPolicy(10), pcl_sub, mask_sub));
-    Sync->registerCallback(boost::bind(&Get_object_pose::cloud_cb, this, _1, _2));
-
     get_object_pose_srv = nh.advertiseService("get_object_pose", &Get_object_pose::srv_cb, this);
-    object_id_srv = nh.advertiseService("object_id", &Get_object_pose::object_id_cb, this);
+    object_srv = nh.advertiseService("object", &Get_object_pose::object_cb, this);
     get_object_pose_con_srv = nh.advertiseService("get_pose_con", &Get_object_pose::object_pose_con, this);
+
+    timer = nh.createTimer(ros::Duration(0.5), &Get_object_pose::get_pose, this);
   }
 };
 
