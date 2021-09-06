@@ -119,7 +119,6 @@ private:
     pcl::NormalEstimation<pcl::PointXYZRGB, pcl::Normal> normalEstimator;
     normalEstimator.setInputCloud(cloud);
     normalEstimator.setSearchMethod(searchTree);
-    //normalEstimator.setKSearch ( 50 );
     normalEstimator.setRadiusSearch(0.01);
     normalEstimator.compute(*normals);
     pcl::concatenateFields(*cloud, *normals, *cloud_with_normals);
@@ -156,22 +155,6 @@ private:
     }
     vector<int> indices2;
     pcl::removeNaNFromPointCloud(*cloud, *cloud, indices2);
-
-    // build the condition
-    // pcl::ConditionAnd<pcl::PointXYZRGB>::Ptr range_cond(new pcl::ConditionAnd<pcl::PointXYZRGB>());
-    // range_cond->addComparison(pcl::FieldComparison<pcl::PointXYZRGB>::ConstPtr(new pcl::FieldComparison<pcl::PointXYZRGB>("x", pcl::ComparisonOps::GT, -0.15)));
-    // range_cond->addComparison(pcl::FieldComparison<pcl::PointXYZRGB>::ConstPtr(new pcl::FieldComparison<pcl::PointXYZRGB>("x", pcl::ComparisonOps::LT, 0.26)));
-    // range_cond->addComparison(pcl::FieldComparison<pcl::PointXYZRGB>::ConstPtr(new pcl::FieldComparison<pcl::PointXYZRGB>("y", pcl::ComparisonOps::GT, -0.23)));
-    // range_cond->addComparison(pcl::FieldComparison<pcl::PointXYZRGB>::ConstPtr(new pcl::FieldComparison<pcl::PointXYZRGB>("y", pcl::ComparisonOps::LT, 0.21)));
-    // range_cond->addComparison(pcl::FieldComparison<pcl::PointXYZRGB>::ConstPtr(new pcl::FieldComparison<pcl::PointXYZRGB>("z", pcl::ComparisonOps::GT, 0.0)));
-    // range_cond->addComparison(pcl::FieldComparison<pcl::PointXYZRGB>::ConstPtr(new pcl::FieldComparison<pcl::PointXYZRGB>("z", pcl::ComparisonOps::LT, 0.785)));
-    // // build the filter
-    // pcl::ConditionalRemoval<pcl::PointXYZRGB> condrem;
-    // condrem.setCondition(range_cond);
-    // condrem.setInputCloud(cloud);
-    // condrem.setKeepOrganized(true);
-    // // apply filter
-    // condrem.filter(*cloud);
 
     return;
   }
@@ -258,8 +241,7 @@ private:
     return inverse_transformation;
   }
 
-  // void preprocess(const sensor_msgs::PointCloud2ConstPtr &input, const sensor_msgs::ImageConstPtr &img)
-  void preprocess(const sensor_msgs::PointCloud2ConstPtr &input)
+  void preprocess(const sensor_msgs::PointCloud2ConstPtr &input, const sensor_msgs::ImageConstPtr &img)
   {
     PointCloudXYZRGB::Ptr cloud(new PointCloudXYZRGB);
     sensor_msgs::PointCloud2Ptr tmp;
@@ -267,36 +249,36 @@ private:
     cv_bridge::CvImagePtr color_img_ptr;
     Mat mask_img;
 
-    // color_img_ptr = cv_bridge::toCvCopy(img);
+    color_img_ptr = cv_bridge::toCvCopy(img);
 
-    // color_img_ptr->image.copyTo(mask_img);
+    color_img_ptr->image.copyTo(mask_img);
 
-    // // get width and height of 2D point cloud data
-    // int width = 640;
-    // int height = 480;
-    // const float Nan_value = 0.0/0.0;
+    // get width and height of 2D point cloud data
+    int width = 640;
+    int height = 480;
+    const float Nan_value = 0.0/0.0;
 
-    // for(int i=0; i < width; i++)
-    // {
-    //   for(int j=0; j < height; j++)
-    //   {
-    //     // Convert from u (column / width), v (row/height) to position in array
-    //     // where X,Y,Z data starts
-    //     int arrayPosition = j * 20480 + i * 32; // v*Cloud.row_step + u*Cloud.point_step
+    for(int i=0; i < width; i++)
+    {
+      for(int j=0; j < height; j++)
+      {
+        // Convert from u (column / width), v (row/height) to position in array
+        // where X,Y,Z data starts
+        int arrayPosition = j * 20480 + i * 32; // v*Cloud.row_step + u*Cloud.point_step
 
-    //     // compute position in array where x,y,z data start
-    //     int arrayPosX = arrayPosition + 0; // X has an offset of 0
-    //     int arrayPosY = arrayPosition + 4; // Y has an offset of 4
-    //     int arrayPosZ = arrayPosition + 8; // Z has an offset of 8
+        // compute position in array where x,y,z data start
+        int arrayPosX = arrayPosition + 0; // X has an offset of 0
+        int arrayPosY = arrayPosition + 4; // Y has an offset of 4
+        int arrayPosZ = arrayPosition + 8; // Z has an offset of 8
 
-    //     if(mask_img.at<uchar>(i,j,0) == 0)
-    //     {
-    //       memcpy(&tmp->data[arrayPosX], &Nan_value, sizeof(float));
-    //       memcpy(&tmp->data[arrayPosY], &Nan_value, sizeof(float));
-    //       memcpy(&tmp->data[arrayPosZ], &Nan_value, sizeof(float));
-    //     }
-    //   }
-    // }
+        if(mask_img.at<uchar>(j,i,0) == 0)
+        {
+          memcpy(&tmp->data[arrayPosX], &Nan_value, sizeof(float));
+          memcpy(&tmp->data[arrayPosY], &Nan_value, sizeof(float));
+          memcpy(&tmp->data[arrayPosZ], &Nan_value, sizeof(float));
+        }
+      }
+    }
 
     pcl::fromROSMsg(*tmp, *cloud); //convert from PointCloud2 to pcl point type
     point_preprocess(cloud);
@@ -318,10 +300,9 @@ private:
       tf2(0,1) = -1;
 
       const sensor_msgs::PointCloud2ConstPtr pc = ros::topic::waitForMessage<sensor_msgs::PointCloud2>("/camera/depth_registered/points", ros::Duration(1));
-      // mk = ros:;topic::waitForMessage<sensor_msgs::Image>("/prediction_mask", ros::Duration(1));
+      const sensor_msgs::ImageConstPtr mk = ros::topic::waitForMessage<sensor_msgs::Image>("/prediction_mask", ros::Duration(1));
 
-      // preprocess(pc, mk)
-      preprocess(pc);
+      preprocess(pc, mk);
 
       printf("ICP\n");
       tf2 = point_2_point_icp(model, sub_cloud, registered_cloud);
@@ -397,10 +378,9 @@ private:
       tf2(0,1) = -1;
 
       const sensor_msgs::PointCloud2ConstPtr pc = ros::topic::waitForMessage<sensor_msgs::PointCloud2>("/camera/depth_registered/points", ros::Duration(1));
-      // mk = ros:;topic::waitForMessage<sensor_msgs::Image>("/prediction_mask", ros::Duration(1));
+      const sensor_msgs::ImageConstPtr mk = ros::topic::waitForMessage<sensor_msgs::Image>("/prediction_mask", ros::Duration(1));
 
-      // preprocess(pc, mk)
-      preprocess(pc);
+      preprocess(pc, mk);
 
       printf("ICP\n");
       tf2 = point_2_point_icp(model, sub_cloud, registered_cloud);
