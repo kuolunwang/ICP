@@ -305,7 +305,7 @@ private:
       preprocess(pc, mk);
 
       printf("ICP\n");
-      while(fit_score > 0.0005)
+      while(fit_score > 0.00005)
       {
         tf2 = point_2_point_icp(model, sub_cloud, registered_cloud);
         ros::spinOnce();
@@ -381,15 +381,14 @@ private:
       tf2(1,0) = 1;
       tf2(0,1) = -1;
 
-      const sensor_msgs::PointCloud2ConstPtr pc = ros::topic::waitForMessage<sensor_msgs::PointCloud2>("/camera/depth_registered/points", ros::Duration(1));
-      const sensor_msgs::ImageConstPtr mk = ros::topic::waitForMessage<sensor_msgs::Image>("/prediction_mask", ros::Duration(1));
-
-      preprocess(pc, mk);
-
       printf("ICP\n");
 
-      while(fit_score > 0.0005)
+      while(fit_score > 0.00005)
       {
+        const sensor_msgs::PointCloud2ConstPtr pc = ros::topic::waitForMessage<sensor_msgs::PointCloud2>("/camera/depth_registered/points", ros::Duration(1));
+        const sensor_msgs::ImageConstPtr mk = ros::topic::waitForMessage<sensor_msgs::Image>("/prediction_mask", ros::Duration(1));
+
+        preprocess(pc, mk);
         tf2 = point_2_point_icp(model, sub_cloud, registered_cloud);
         ros::spinOnce();
       }
