@@ -1,6 +1,6 @@
 # ICP
 
-This repo is a ros package for calculate iterative closest point(ICP) with c++ pcl libray. In this repo we use tableware for example, the tableware pcd file can refer [model](https://github.com/kuolunwang/ICP/tree/main/model)
+This repo is a ros package for calculate iterative closest point(ICP) with c++ pcl libray. In this repo we use tableware for example, the tableware pcd file can refer [model](https://github.com/kuolunwang/ICP/tree/main/model).
 
 ## How to use ICP repo
 
@@ -14,21 +14,17 @@ This repo is a ros package for calculate iterative closest point(ICP) with c++ p
     ```
     roslaunch ICP icp.launch
     ```
+    
 ## Topic List
-
----
 
 | Topic Name | Topic Type | Topic Description |
 |:--------:|:--------:|:--------:|
 | /camera/model | [PointCloud2](http://docs.ros.org/en/noetic/api/sensor_msgs/html/msg/PointCloud2.html) | origin object pcd file |
 | /camera/cloud | [PointCloud2](http://docs.ros.org/en/noetic/api/sensor_msgs/html/msg/PointCloud2.html) | after filtered pointcloud2 |
 | /camera/registered_cloud | [PointCloud2](http://docs.ros.org/en/noetic/api/sensor_msgs/html/msg/PointCloud2.html) | after ICP pointcloud2 result |
-| /object_pose| [Pose](http://docs.ros.org/en/noetic/api/geometry_msgs/html/msg/Pose.html) | after ICP object pose |
-
+| /object_pose | [Pose](http://docs.ros.org/en/noetic/api/geometry_msgs/html/msg/Pose.html) | after ICP object pose |
 
 ## Service List
-
----
 
 | Service Name | Service Type | Service Description |
 |:--------:|:--------:|:--------:|

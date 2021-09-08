@@ -305,7 +305,11 @@ private:
       preprocess(pc, mk);
 
       printf("ICP\n");
-      tf2 = point_2_point_icp(model, sub_cloud, registered_cloud);
+      while(fit_score > 0.0005)
+      {
+        tf2 = point_2_point_icp(model, sub_cloud, registered_cloud);
+        ros::spinOnce();
+      }
 
       final_tf = tf2;
 
@@ -383,8 +387,12 @@ private:
       preprocess(pc, mk);
 
       printf("ICP\n");
-      tf2 = point_2_point_icp(model, sub_cloud, registered_cloud);
 
+      while(fit_score > 0.0005)
+      {
+        tf2 = point_2_point_icp(model, sub_cloud, registered_cloud);
+        ros::spinOnce();
+      }
       final_tf = tf2;
 
       cout << final_tf << endl;
