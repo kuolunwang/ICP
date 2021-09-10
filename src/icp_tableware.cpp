@@ -299,10 +299,15 @@ private:
       tf2(1,0) = 1;
       tf2(0,1) = -1;
 
-      const sensor_msgs::PointCloud2ConstPtr pc = ros::topic::waitForMessage<sensor_msgs::PointCloud2>("/camera/depth_registered/points", ros::Duration(1));
-      const sensor_msgs::ImageConstPtr mk = ros::topic::waitForMessage<sensor_msgs::Image>("/prediction_mask", ros::Duration(1));
+      boost::shared_ptr<sensor_msgs::Image const> shared_mask;
+      boost::shared_ptr<sensor_msgs::PointCloud2 const> shared_pc; 
 
-      preprocess(pc, mk);
+      do{
+        shared_pc = ros::topic::waitForMessage<sensor_msgs::PointCloud2>("/camera/depth_registered/points", ros::Duration(1));
+        shared_mask = ros::topic::waitForMessage<sensor_msgs::Image>("/prediction_mask", ros::Duration(1));
+      }while(shared_mask == NULL);
+
+      preprocess(shared_pc, shared_mask);
 
       printf("ICP\n");
       while(fit_score > 0.00005)
@@ -378,20 +383,25 @@ private:
 
       Eigen::Matrix4f tf1, tf2, final_tf;
 
+      boost::shared_ptr<sensor_msgs::Image const> shared_mask;
+      boost::shared_ptr<sensor_msgs::PointCloud2 const> shared_pc; 
+
       tf2(1,0) = 1;
       tf2(0,1) = -1;
 
       printf("ICP\n");
 
-      while(fit_score > 0.00005)
+      do
       {
-        const sensor_msgs::PointCloud2ConstPtr pc = ros::topic::waitForMessage<sensor_msgs::PointCloud2>("/camera/depth_registered/points", ros::Duration(1));
-        const sensor_msgs::ImageConstPtr mk = ros::topic::waitForMessage<sensor_msgs::Image>("/prediction_mask", ros::Duration(1));
-
-        preprocess(pc, mk);
+        do{
+          shared_pc = ros::topic::waitForMessage<sensor_msgs::PointCloud2>("/camera/depth_registered/points", ros::Duration(1));
+          shared_mask = ros::topic::waitForMessage<sensor_msgs::Image>("/prediction_mask", ros::Duration(1));
+        }while(shared_mask == NULL);
+        preprocess(shared_pc, shared_mask);
         tf2 = point_2_point_icp(model, sub_cloud, registered_cloud);
         ros::spinOnce();
-      }
+      }while(fit_score > 0.00005);
+
       final_tf = tf2;
 
       cout << final_tf << endl;
